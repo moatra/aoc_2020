@@ -1,0 +1,60 @@
+[package]
+name = "aoc_2020"
+version = "0.1.0"
+authors = ["thomas"]
+edition = "2018"
+
+[lib]
+name = "aoc_2020"
+path = "src/lib.rs"
+
+[[bin]]
+name = "d1p1"
+path = "src/day1/main.rs"
+
+[[bin]]
+name = "d2p1"
+path = "src/day2/main.rs"
+
+[[bin]]
+name = "d3p1"
+path = "src/day3/main.rs"
+
+[[bin]]
+name = "d4p1"
+path = "src/day4/main.rs"
+
+[[bin]]
+name = "d5p1"
+path = "src/day5/main.rs"
+
+[[bin]]
+name = "d6p1"
+path = "src/day6/main.rs"
+
+[[bin]]
+name = "d7p1"
+path = "src/day7/main.rs"
+
+[[bin]]
+name = "d8p1"
+path = "src/day8/main.rs"
+
+[[bin]]
+name = "d9p1"
+path = "src/day9/main.rs"
+
+[[bin]]
+name = "d10p1"
+path = "src/day10/main.rs"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.35"
+thiserror = "1.0.22"
+itertools = "0.9.0"
+nom = "6.0.1"
+lazy_static = "1.4.0"
+bit-vec = "0.6"
