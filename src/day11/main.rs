@@ -3,7 +3,7 @@ use aoc_2020::read_input;
 use std::fmt;
 use std::fmt::Write;
 
-#[derive(Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
 enum GridContents {
     Floor,
     OccupiedSeat,
@@ -18,6 +18,13 @@ impl GridContents {
             GridContents::Floor => false
         }
     }
+    fn is_seat(&self) -> bool {
+        match self {
+            GridContents::OccupiedSeat => true,
+            GridContents::EmptySeat => true,
+            GridContents::Floor => false
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -26,6 +33,156 @@ struct FerrySeating {
     width: usize,
     data: Vec<GridContents>
 }
+
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+enum CursorDirection {
+    Id,
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW
+}
+
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+struct FerryIndex {
+    x: usize,
+    y: usize,
+}
+
+impl FerryIndex {
+    fn id(&self, grid: &FerrySeating) -> usize {
+        (self.y * grid.width) + self.x
+    }
+    fn get<'a>(&self, grid: &'a FerrySeating) -> Option<&'a GridContents> {
+        // <0 impossible to represent thanks to unsigned
+        if self.x >= grid.width || self.y >= grid.height {
+            None
+        } else {
+            grid.data.get(self.id(grid))
+        }
+    }
+
+    // todo: simplify
+    fn advance(&self, grid: &FerrySeating, dir: CursorDirection) -> Option<FerryIndex> {
+        match dir {
+            CursorDirection::Id => {
+                let id = self.id(grid) + 1;
+                if id < grid.data.len() {
+                    Some(FerryIndex {
+                        x: id % grid.width,
+                        y: id / grid.width
+                    })
+                } else {
+                    None
+                }
+            }
+            CursorDirection::N => {
+                if self.y == 0 {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x,
+                        y: self.y - 1
+                    })
+                }
+            }
+            CursorDirection::NE => {
+                if self.y == 0 || self.x + 1 >= grid.width {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x + 1,
+                        y: self.y - 1
+                    })
+                }
+            }
+            CursorDirection::E => {
+                if self.x + 1 >= grid.width {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x + 1,
+                        y: self.y
+                    })
+                }
+            }
+            CursorDirection::SE => {
+                if self.y + 1 >= grid.height || self.x + 1 >= grid.width {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x + 1,
+                        y: self.y + 1
+                    })
+                }
+            }
+            CursorDirection::S => {
+                if self.y + 1 >= grid.height {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x,
+                        y: self.y + 1
+                    })
+                }
+            }
+            CursorDirection::SW => {
+                if self.y + 1 >= grid.height || self.x == 0 {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x - 1,
+                        y: self.y + 1
+                    })
+                }
+            }
+            CursorDirection::W => {
+                if self.x == 0 {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x - 1,
+                        y: self.y
+                    })
+                }
+            }
+            CursorDirection::NW => {
+                if self.x == 0 || self.y == 0 {
+                    None
+                } else {
+                    Some(FerryIndex {
+                        x: self.x - 1,
+                        y: self.y - 1
+                    })
+                }
+            }
+        }
+    }
+}
+
+struct FerryCursor<'a> {
+    grid: &'a FerrySeating,
+    curr: Option<FerryIndex>,
+    dir: CursorDirection
+}
+
+impl Iterator for FerryCursor<'_> {
+    type Item = (FerryIndex, GridContents);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let results = self.curr.and_then(|indx| indx.get(self.grid).map(|data| (indx, *data)));
+
+        self.curr = self.curr.and_then(|idx| idx.advance(self.grid, self.dir));
+
+        results
+    }
+}
+
+
 
 impl FerrySeating {
     fn parse(input: String) -> AResult<FerrySeating> {
@@ -53,12 +210,28 @@ impl FerrySeating {
         })
     }
 
-    fn next_state(&self) -> Option<FerrySeating> {
+    fn iter(&self) -> FerryCursor {
+        FerryCursor {
+            grid: self,
+            curr: Some(FerryIndex { x: 0, y: 0 }),
+            dir: CursorDirection::Id
+        }
+    }
+
+    fn search_iter(&self, from: FerryIndex, dir: CursorDirection) -> FerryCursor {
+        FerryCursor {
+            grid: self,
+            curr: from.advance(self, dir),
+            dir
+        }
+    }
+
+    fn next_state(&self, logic: &Box<dyn SeatingLogic>) -> Option<FerrySeating> {
         let mut next_data = Vec::new();
         let mut changed = false;
-        for (grid_pos, pos_state) in self.data.iter().enumerate() {
-            let (pos_changed, next_pos_state) = self.next_pos_state(grid_pos, pos_state);
-            changed = changed || pos_changed;
+        for (idx, pos_state) in self.iter() {
+            let next_pos_state = logic.next_pos_state(self, idx, pos_state);
+            changed = changed || (pos_state != next_pos_state);
             next_data.push(next_pos_state);
         }
         if changed {
@@ -69,57 +242,6 @@ impl FerrySeating {
             })
         } else {
             None
-        }
-    }
-    fn next_pos_state(&self, grid_pos: usize, cur_state: &GridContents) -> (bool, GridContents) {
-        // todo: consume old state so we don't need to re-allocate
-        let adjacent = self.adjacent_iter(grid_pos);
-        let adj_occupied_count = adjacent.iter()
-            .filter(|pos| pos.is_occupied())
-            .count();
-        let ret = match cur_state {
-            GridContents::OccupiedSeat if adj_occupied_count >= 4 => (true, GridContents::EmptySeat),
-            GridContents::EmptySeat if adj_occupied_count == 0 => (true, GridContents::OccupiedSeat),
-            state => (false, state.clone()),
-        };
-        // println!("Evaluating pos {} {:?}, cur {:?}, next: {:?}, adjcnt: {}, adjacent: {:?}", grid_pos, self.to_coords(grid_pos), cur_state, ret, adj_occupied_count, adjacent);
-        ret
-
-    }
-
-    // fn adjacent_iter<'a>(&'a self, grid_pos: usize) -> impl Iterator<Item = &GridContents> + 'a {
-    //     // todo: custom iterator implementation that tracks 0-8 and grid_pos to impl next
-    //     let (x, y) = self.to_coords(grid_pos);
-    //     [
-    //         self.to_grid_pos(x - 1, y - 1), self.to_grid_pos(x, y - 1), self.to_grid_pos(x + 1, y - 1),
-    //         self.to_grid_pos(x - 1, y),                                       self.to_grid_pos(x + 1, y),
-    //         self.to_grid_pos(x - 1, y + 1), self.to_grid_pos(x, y + 1), self.to_grid_pos(x + 1, y + 1),
-    //     ].iter().copied().map(move |pos| self.data.get(pos)).flatten()
-    // }
-    fn adjacent_iter<'a>(&'a self, grid_pos: usize) -> Vec<&'a GridContents> {
-        // todo: custom iterator implementation that tracks 0-8 and grid_pos to impl next
-        let (x, y) = self.to_coords(grid_pos);
-        let adjacent_positions : [Option<usize>; 8] = [
-            self.to_grid_pos(x - 1, y - 1), self.to_grid_pos(x, y - 1), self.to_grid_pos(x + 1, y - 1),
-            self.to_grid_pos(x - 1, y),                                       self.to_grid_pos(x + 1, y),
-            self.to_grid_pos(x - 1, y + 1), self.to_grid_pos(x, y + 1), self.to_grid_pos(x + 1, y + 1),
-        ];
-
-        // todo: why does .flatten().map(...) work, but .flat_map(...) did not?
-        adjacent_positions.iter().flatten().map(move |pos| self.data.get(*pos)).flatten().collect()
-    }
-
-    fn to_coords(&self, grid_pos: usize) -> (isize, isize) {
-        let x = (grid_pos % self.width) as isize;
-        let y = (grid_pos / self.width) as isize;
-        (x, y)
-    }
-
-    fn to_grid_pos(&self, x: isize, y: isize) -> Option<usize> {
-        if x < 0 || y < 0 {
-            None
-        } else {
-            Some((y as usize * (self.width)) + (x as usize))
         }
     }
 }
@@ -143,18 +265,110 @@ impl fmt::Display for FerrySeating {
     }
 }
 
+trait SeatingLogic {
+    // todo: remove self logic?  maybe by just using function pointers?
+    fn next_pos_state(&self, grid: &FerrySeating, idx: FerryIndex, cur_state: GridContents) -> GridContents;
+}
 
+struct Pt1Logic {}
 
-fn main() -> AResult<()> {
-    let mut part1 = FerrySeating::parse(read_input(11)?)?;
-    println!("{}", part1);
+impl Pt1Logic {
+    fn adjacent_iter(grid: &FerrySeating, idx: FerryIndex) -> Vec<(FerryIndex, GridContents)> {
+        vec![
+            grid.search_iter(idx, CursorDirection::N),
+            grid.search_iter(idx, CursorDirection::NE),
+            grid.search_iter(idx, CursorDirection::E),
+            grid.search_iter(idx, CursorDirection::SE),
+            grid.search_iter(idx, CursorDirection::S),
+            grid.search_iter(idx, CursorDirection::SW),
+            grid.search_iter(idx, CursorDirection::W),
+            grid.search_iter(idx, CursorDirection::NW),
+        ].iter_mut()
+            .map(|iter| iter.next())
+            .flatten()
+            .collect() // todo: skip collect?
+    }
+
+}
+
+fn common_decider(cur_state: GridContents, adjacent: Vec<(FerryIndex, GridContents)>, visible_req: usize) -> GridContents {
+    let adj_occupied_count = adjacent.iter()
+        .filter(|(_grid_pos, pos)| pos.is_occupied())
+        .count();
+    let ret = match cur_state {
+        GridContents::OccupiedSeat if adj_occupied_count >= visible_req => GridContents::EmptySeat,
+        GridContents::EmptySeat if adj_occupied_count == 0 => GridContents::OccupiedSeat,
+        state => state,
+    };
+    // println!("Evaluating pos {} {:?}, cur {:?}, next: {:?}, adjcnt: {}, adjacent: {:?}", grid_pos, self.to_coords(grid_pos), cur_state, ret, adj_occupied_count, adjacent);
+    ret
+}
+
+struct SimulationResults {
+    iterations: usize,
+    occupied: usize
+}
+fn common_simulator(starting_grid: FerrySeating, logic: Box<dyn SeatingLogic>) -> SimulationResults {
+    let mut current_grid = starting_grid;
+    let mut iteration_count = 0;
+    // println!("{}", current_grid);
+    // println!();
 
     loop {
-        match part1.next_state() {
-            Some(next_iter) => part1 = next_iter,
+        match current_grid.next_state(&logic) {
+            Some(next_iter) => {
+                current_grid = next_iter;
+                iteration_count += 1;
+                // println!("round {}:", iteration_count);
+                // println!("{}", current_grid);
+                // println!();
+            },
             None => break
         }
     }
+
+    SimulationResults {
+        iterations: iteration_count,
+        occupied: current_grid.data.iter().filter(|pos| pos.is_occupied()).count()
+    }
+}
+
+impl SeatingLogic for Pt1Logic {
+    fn next_pos_state(&self, grid: &FerrySeating, grid_pos: FerryIndex, cur_state: GridContents) -> GridContents {
+        common_decider(cur_state, Pt1Logic::adjacent_iter(grid, grid_pos), 4)
+    }
+}
+
+struct Pt2Logic {}
+
+impl Pt2Logic {
+    fn adjacent_iter(grid: &FerrySeating, idx: FerryIndex) -> Vec<(FerryIndex, GridContents)> {
+        vec![
+            grid.search_iter(idx, CursorDirection::N),
+            grid.search_iter(idx, CursorDirection::NE),
+            grid.search_iter(idx, CursorDirection::E),
+            grid.search_iter(idx, CursorDirection::SE),
+            grid.search_iter(idx, CursorDirection::S),
+            grid.search_iter(idx, CursorDirection::SW),
+            grid.search_iter(idx, CursorDirection::W),
+            grid.search_iter(idx, CursorDirection::NW),
+        ].iter_mut()
+            .map(|iter| iter.find(|(_idx, pos)| pos.is_seat()))
+            .flatten()
+            .collect() // todo: skip collect?
+    }
+}
+
+impl SeatingLogic for Pt2Logic {
+    fn next_pos_state(&self, grid: &FerrySeating, grid_pos: FerryIndex, cur_state: GridContents) -> GridContents {
+        common_decider(cur_state, Pt2Logic::adjacent_iter(grid, grid_pos), 5)
+    }
+}
+
+
+
+fn main() -> AResult<()> {
+    let input = FerrySeating::parse(read_input(11)?)?;
 
     // wtf - scoping is that it's not iteratively updating part1, it's always recalculating from the initial state
     // let mut counter = 0;
@@ -166,8 +380,11 @@ fn main() -> AResult<()> {
     //     }
     // };
 
-    let part1_answer = part1.data.iter().filter(|pos| pos.is_occupied()).count();
-    println!("After stabilizing, {} seats are occupied", part1_answer);
+    let part1_answer = common_simulator(input.clone(), Box::new(Pt1Logic {}));
+    println!("Stabilized after {} rounds, {} seats are occupied", part1_answer.iterations, part1_answer.occupied);
+
+    let part2_answer = common_simulator(input, Box::new(Pt2Logic {}));
+    println!("Stabilized after {} rounds, {} seats are occupied", part2_answer.iterations, part2_answer.occupied);
 
 
     Ok(())

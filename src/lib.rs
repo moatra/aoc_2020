@@ -3,8 +3,8 @@ use std::fs::File;
 use thiserror::Error;
 use std::result::Result;
 
-// const SRC_ROOT: &str = "/home/thomas/Projects/aoc_2020/src";
-const SRC_ROOT: &str = "/Users/thomas/Work/aoc_2020/src";
+const SRC_ROOT: &str = "/home/thomas/Projects/aoc_2020/src";
+// const SRC_ROOT: &str = "/Users/thomas/Work/aoc_2020/src";
 
 pub fn load_input(day: i32) -> std::io::Result<File> {
     let mut path = PathBuf::from(SRC_ROOT);
